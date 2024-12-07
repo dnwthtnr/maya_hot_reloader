@@ -1,5 +1,6 @@
 from PySide2 import QtCore, QtWidgets, QtGui
 import sys, collections
+from maya import OpenMayaUI as omui
 
 class TreeNode(object):
 
@@ -57,7 +58,6 @@ class ModuleTree(QtCore.QAbstractItemModel):
 
         return index
 
-
     def rowCount(self, parent=None, *args, **kwargs):
         if not parent.isValid():
             return self.root_node().child_count()
@@ -84,6 +84,17 @@ class ModuleTree(QtCore.QAbstractItemModel):
         return _node.get_data("name")
 
 
+class ModuleToolbar(QtWidgets.QToolBar):
+
+    def __init__(self):
+        super().__init__()
+
+        reload_action = QtWidgets.QAction(text="Reload")
+
+
+        self.addActions(reload_action)
+
+
 
 
 def generate_module_node_tree(modules):
@@ -95,6 +106,7 @@ def generate_module_node_tree(modules):
     while deque:
         target_dict = hierarchy_dict
         mod_deque = collections.deque(deque.popleft().split("."))
+        print(mod_deque)
         while mod_deque:
             if mod_deque[0] not in target_dict:
                 _node = TreeNode()
@@ -129,24 +141,36 @@ def print_node_tree(root_node, depth=0):
 
     # print("hierarchydict", hierarchy_dict)
 
-def main():
-    modules = sys.modules
+
+def hot_reloader_window(parent=None):
     root = generate_module_node_tree(sys.modules.keys())
-
-
-    _app = QtWidgets.QApplication()
-    dialog = QtWidgets.QDialog()
+    print_node_tree(root)
+    win = QtWidgets.QMainWindow(parent=parent)
     view = QtWidgets.QTreeView()
     view.setModel(ModuleTree(root))
-    dialog.setLayout(QtWidgets.QVBoxLayout())
-    dialog.layout().addWidget(view)
-    dialog.show()
-
-    sys.exit(_app.exec_())
+    win.setCentralWidget(view)
+    return win
 
 
 
-    print_node_tree(root)
+
+def _maya_main():
+    from shiboken2 import wrapInstance
+    main_window = wrapInstance(int(omui.MQtUtil.mainWindow()), QtWidgets.QMainWindow)
+    win = hot_reloader_window(main_window)
+    win.show()
+
+
+def main(standalone=False):
+
+    if standalone:
+        _app = QtWidgets.QApplication()
+        win = hot_reloader_window()
+        win.show()
+        sys.exit(_app.exec_())
+        return
+
+    _maya_main()
 
 if __name__ == "__main__":
-    main()
+    main(True)

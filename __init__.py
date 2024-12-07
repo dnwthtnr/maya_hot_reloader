@@ -1,4 +1,1 @@
-from . import view
-
-def main():
-    view.main()
+from .view import main
