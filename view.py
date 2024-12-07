@@ -17,6 +17,9 @@ class TreeNode(object):
     def child_count(self):
         return len(self.children())
 
+    def add_child(self, node, index=-1):
+        self.children().insert(index, node)
+
     def index_in_parent(self):
         if not self._parent:
             return
@@ -31,35 +34,62 @@ class TreeNode(object):
 
 class ModuleTree(QtCore.QAbstractItemModel):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, root_node, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._root_node = root_node
         return
+
+    def root_node(self):
+        return self._root_node
 
     def index(self, row, column, parent=None, *args, **kwargs):
-        if row <= self.rowCount(parent):
+        if not self.hasIndex(row, column, parent):
             return QtCore.QModelIndex()
-        if column <= self.columnCount(parent):
+        if not parent.isValid():
+            return self.createIndex(row, column, self.root_node().children()[row])
+
+        _parent_node = parent.internalPointer()
+        if not isinstance(_parent_node, TreeNode):
             return QtCore.QModelIndex()
 
-        QtCore.QModelIndex(row, column, parent)
-        return
+        _node = _parent_node.children()[row]
+        index = self.createIndex(row, column, _node)
+
+        return index
+
 
     def rowCount(self, parent=None, *args, **kwargs):
-        return
+        if not parent.isValid():
+            return self.root_node().child_count()
+        return parent.internalPointer().child_count()
 
     def columnCount(self, parent=None, *args, **kwargs):
-        return
+        return 1
 
     def parent(self, index):
-        return
+        if not index.isValid():
+            return QtCore.QModelIndex()
+        _node = index.internalPointer()
+        if not _node.parent():
+            return QtCore.QModelIndex()
+        _parent_node = _node.parent()
+        return self.index(_parent_node.index_in_parent(), 0, _parent_node.parent())
 
     def data(self, index, role=None):
-        return
+        if not index.isValid():
+            return None
+        if role != QtCore.Qt.DisplayRole:
+            return None
+        _node = index.internalPointer()
+        return _node.get_data("name")
+
+
 
 
 def generate_module_node_tree(modules):
     hierarchy_dict = {}
     root_node = TreeNode()
+    root_node.set_data("name", "ROOT")
     node_history = [root_node]
     deque = collections.deque(modules)
     while deque:
@@ -69,17 +99,54 @@ def generate_module_node_tree(modules):
             if mod_deque[0] not in target_dict:
                 _node = TreeNode()
                 _node.set_data("name", mod_deque[0])
-                node_history[-1].add_child
-
-                target_dict[mod_deque[0]] = {}
+                _parent_node = target_dict.get("NODE", root_node)
+                _parent_node.add_child(_node)
+                target_dict[mod_deque[0]] = {"NODE": _node}
             target_dict = target_dict[mod_deque[0]]
             mod_deque.popleft()
+    return root_node
 
-    print("hierarchydict", hierarchy_dict)
+def print_node_tree(root_node, depth=0):
+    deque = collections.deque()
+    deque.append(root_node)
+    branch_out = ("——"*depth + "|")
+    branch_down = "|"
+    prefix = branch_down + branch_out
+
+    print(prefix + root_node.get_data("name"))
+
+    depth += 1
+    for _node in root_node.children():
+        print_node_tree(_node, depth)
+    # while deque:
+    #     _node = deque.popleft()
+    #     print(prefix + _node.get_data("name"))
+    #     prefix += branch_down
+    #     if _node.children():
+    #         prefix += branch_out
+    #     deque.extend(_node.children())
+
+
+    # print("hierarchydict", hierarchy_dict)
 
 def main():
     modules = sys.modules
-    generate_module_node_tree(sys.modules.keys())
+    root = generate_module_node_tree(sys.modules.keys())
+
+
+    _app = QtWidgets.QApplication()
+    dialog = QtWidgets.QDialog()
+    view = QtWidgets.QTreeView()
+    view.setModel(ModuleTree(root))
+    dialog.setLayout(QtWidgets.QVBoxLayout())
+    dialog.layout().addWidget(view)
+    dialog.show()
+
+    sys.exit(_app.exec_())
+
+
+
+    print_node_tree(root)
 
 if __name__ == "__main__":
     main()
