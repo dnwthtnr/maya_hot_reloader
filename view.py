@@ -84,15 +84,50 @@ class ModuleTree(QtCore.QAbstractItemModel):
         return _node.get_data("name")
 
 
+
 class ModuleToolbar(QtWidgets.QToolBar):
+    reload_pressed = QtCore.Signal()
+
 
     def __init__(self):
         super().__init__()
 
-        reload_action = QtWidgets.QAction(text="Reload")
+        reload_button = QtWidgets.QToolButton()
+        reload_button.setText("Reload")
+        reload_button.clicked.connect(self.reload_pressed.emit)
+
+        self.addWidget(reload_button)
 
 
-        self.addActions(reload_action)
+class HotReloaderFederalController(QtCore.QObject):
+
+    def __init__(self, view):
+        """
+
+        Parameters
+        ----------
+        view: QtWidgets.QTreeView
+        """
+        super().__init__()
+        self.view = view
+
+    def reload_selection(self):
+        """
+        Deletes selected module names from sys modules
+        Returns
+        -------
+
+        """
+        print("RELOAD")
+        selection_model = self.view.selectionModel()
+        indexes = selection_model.selectedIndexes()
+        nodes = [index.internalPointer() for index in indexes]
+        module_names = [node.get_data("name") for node in nodes]
+        for module in sys.modules.copy():
+            for _mod in module_names:
+                if module.startswith(_mod):
+                    print("deleting", _mod)
+                    del sys.modules[module]
 
 
 
@@ -142,11 +177,20 @@ def print_node_tree(root_node, depth=0):
     # print("hierarchydict", hierarchy_dict)
 
 
+
+
 def hot_reloader_window(parent=None):
     root = generate_module_node_tree(sys.modules.keys())
     print_node_tree(root)
     win = QtWidgets.QMainWindow(parent=parent)
+    toolbar = ModuleToolbar()
+
+
+    win.addToolBar(QtCore.Qt.TopToolBarArea,toolbar)
     view = QtWidgets.QTreeView()
+    controller = HotReloaderFederalController(view = view)
+    win._controller = controller
+    toolbar.reload_pressed.connect(controller.reload_selection)
     view.setModel(ModuleTree(root))
     win.setCentralWidget(view)
     return win
