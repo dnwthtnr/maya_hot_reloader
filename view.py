@@ -90,14 +90,15 @@ class ProxyModel(QtCore.QSortFilterProxyModel):
     def __init__(self):
         super().__init__()
         self._filter_text = ""
-        self._ratio_threshhold = 0.6
+        self._ratio_threshhold = 0.4
 
         self._ratio_cache = {}
 
     def set_filter_text(self, text):
         self._ratio_cache = {}
-        print('filterupdate', text)
+        # print('filterupdate', text)
         self._filter_text = text
+        self.invalidate()
 
     def filter_text(self):
         return self._filter_text
@@ -108,32 +109,45 @@ class ProxyModel(QtCore.QSortFilterProxyModel):
     def filterAcceptsRow(self, source_row, source_parent):
 
         name = (self.sourceModel().data(self.sourceModel().index(source_row, 0, source_parent), QtCore.Qt.DisplayRole)).lower()
-        print("name", name)
         if not name:
             return False
         if self.filter_text() in name:
             return True
 
         _ratio = difflib.SequenceMatcher(None, self.filter_text(), name).real_quick_ratio()
+
         self._ratio_cache[name] = _ratio
-        print(_ratio)
-        return _ratio >= self._ratio_threshhold
+        # print(_ratio)
+        if _ratio > self._ratio_threshhold:
+            # print("DELETE", name)
+            return False
+        return True
 
     def lessThan(self, source_left, source_right):
+        # print("lessthan")
         if not self.filter_text():
             return source_left.row() < source_right.row()
         _left_ratio = self._ratio_cache.get(source_left, difflib.SequenceMatcher(None, self.filter_text(), (source_left.data()).lower()).quick_ratio())
         _right_ratio = self._ratio_cache.get(source_right, difflib.SequenceMatcher(None, self.filter_text(), (source_right.data()).lower()).quick_ratio())
 
-        return _left_ratio > _right_ratio
+        return _left_ratio < _right_ratio
 
     # def data(self, index, role=QtCore.Qt.DisplayRole):
-    #
+    #     if role != QtCore.Qt.DisplayRole:
+    #         return
     #     # Provides a color falloff to demonstrate the filtering
     #     if not self.filter_text() or self._ratio_threshhold <= 0.0:
     #         return super().data(index, role)
-    #     ratio = difflib.SequenceMatcher(None, self.filter_text(), (self.sourceModel().data(index, role) or "").lower()).quick_ratio()
+    #     # ratio = difflib.SequenceMatcher(None, self.filter_text(), (self.sourceModel().data(index, role) or "").lower()).quick_ratio()
+    #     _data = super().data(index, role)
+    #     if not _data:
+    #         super().moveRow(index.parent(), index.row(), QtCore.QModelIndex(), -1)
+    #         # self.removeRow(index.row(), index.parent())
+    #         return
+    #     ratio = difflib.SequenceMatcher(None, self.filter_text(), _data.lower()).quick_ratio()
     #     if ratio < self._ratio_threshhold:
+    #         # self.removeRow(index.row(), index.parent())
+    #         super().moveRow(index.parent(), index.row(), QtCore.QModelIndex(), -1)
     #         # Draw falloff color between 20 (no match) and 255 (full match)
     #         t = ratio * (1.0/self._ratio_threshhold)
     #         luminance = (1 - t) * 20 + t * 255
@@ -271,6 +285,7 @@ def hot_reloader_window(parent=None):
     sorting_proxy_model = ProxyModel()
     sorting_proxy_model.setSourceModel(ModuleTree(root))
     sorting_proxy_model.setRecursiveFilteringEnabled(True)
+    sorting_proxy_model.setDynamicSortFilter(True)
     view.setModel(sorting_proxy_model)
     view.setSortingEnabled(True)
     win.setCentralWidget(view)
