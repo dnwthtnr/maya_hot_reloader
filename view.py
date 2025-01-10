@@ -41,6 +41,8 @@ class ModuleTree(QtCore.QAbstractItemModel):
     def __init__(self, root_node, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._root_node = root_node
+
+
         return
 
     def root_node(self):
@@ -92,11 +94,13 @@ class ProxyModel(QtCore.QSortFilterProxyModel):
         self._filter_text = ""
         self._ratio_threshhold = 0.4
 
-        self._ratio_cache = {}
+        self.toplevelonly = False
+        self._flat_ratio_cache = {}
+        self._branch_ratio_cache = {}
 
     def set_filter_text(self, text):
-        self._ratio_cache = {}
-        # print('filterupdate', text)
+        self._flat_ratio_cache = {}
+        self._branch_ratio_cache = {}
         self._filter_text = text
         self.invalidate()
 
@@ -107,30 +111,140 @@ class ProxyModel(QtCore.QSortFilterProxyModel):
         return True
 
     def filterAcceptsRow(self, source_row, source_parent):
-
-        name = (self.sourceModel().data(self.sourceModel().index(source_row, 0, source_parent), QtCore.Qt.DisplayRole)).lower()
-        if not name:
-            return False
-        if self.filter_text() in name:
-            return True
-
-        _ratio = difflib.SequenceMatcher(None, self.filter_text(), name).real_quick_ratio()
-
-        self._ratio_cache[name] = _ratio
-        # print(_ratio)
-        if _ratio > self._ratio_threshhold:
-            # print("DELETE", name)
-            return False
         return True
 
+        return self.rowAccepted(source_row, source_parent)
+
     def lessThan(self, source_left, source_right):
-        # print("lessthan")
+
+        # when searching into nested indices check overall score for children -- lookup table for each top level row, if a child scores higher overwrite score from there
+
         if not self.filter_text():
             return source_left.row() < source_right.row()
-        _left_ratio = self._ratio_cache.get(source_left, difflib.SequenceMatcher(None, self.filter_text(), (source_left.data()).lower()).quick_ratio())
-        _right_ratio = self._ratio_cache.get(source_right, difflib.SequenceMatcher(None, self.filter_text(), (source_right.data()).lower()).quick_ratio())
+        _left_ratio = self.get_ratio(source_left)
+        _right_ratio = self.get_ratio(source_right)
+        if _left_ratio < _right_ratio:
+            return True
+        return False
 
-        return _left_ratio < _right_ratio
+    def get_ratio(self, index, force_flat_query=False):
+        """
+        Get cached ratio or generate value
+
+        Parameters
+        ----------
+        key
+
+        Returns
+        -------
+
+        """
+        if not index.isValid():
+            return 0
+        key = self.sourceModel().data(index, QtCore.Qt.DisplayRole)
+
+        if not self.toplevelonly and not force_flat_query:
+            return self.get_branch_ratio(key, index)
+
+        _ratio = self._flat_ratio_cache.get(key, difflib.SequenceMatcher(None, self.filter_text(), key.lower()).quick_ratio())
+
+        self._flat_ratio_cache[key] = _ratio
+        return _ratio
+
+    def get_branch_ratio(self, key, index):
+        """
+        Get the highest ratio for a any leaf on a given branch
+        Returns
+        -------
+
+        """
+
+        _root_index = self.get_branch_root(index.row(), index.parent())
+        ratio = self._branch_ratio_cache.get(key)
+
+
+        if not ratio:
+            self.cache_branch_ratio(key, _root_index)
+            ratio = self._branch_ratio_cache.get(key)
+
+        return ratio
+
+    def cache_branch_ratio(self, key, root_index):
+        """
+        iterate over branch and cache highest ratio
+        Parameters
+        ----------
+        key
+        root_index
+
+        Returns
+        -------
+
+        """
+
+        print(f"Caching for {key} {root_index}")
+        index_deque = collections.deque()
+
+        def dump_children_on_stack(parent_index):
+            _row_count = self.sourceModel().rowCount(parent_index)
+            if _row_count == 0:
+                return
+            index_deque.extend(
+                [self.sourceModel().index(i, 0, parent_index) for i in range(_row_count)]
+            )
+
+        dump_children_on_stack(root_index)
+
+        winning_ratio = self.get_ratio(root_index, force_flat_query=True)
+        winning_index = root_index
+        while index_deque:
+            _index = index_deque.popleft()
+            _current_ratio = self.get_ratio(_index, force_flat_query=True)
+            if _current_ratio > winning_ratio:
+                winning_ratio = _current_ratio
+                winning_index = _index
+            dump_children_on_stack(_index)
+
+        self._branch_ratio_cache[key] = winning_ratio
+        print(f"Winning ratio: {winning_ratio} {winning_index}")
+
+        # return winning_ratio, winning_index
+
+
+    def get_branch_root(self, row, parent):
+        index = self.sourceModel().index(row, 0, parent)
+        if not parent.isValid():
+            return index
+        _parent = index.parent()
+        while _parent.parent().isValid():
+            _parent = _parent.parent()
+        return _parent
+
+    def rowAccepted(self, row, parent):
+        _index = self.sourceModel().index(row, 0, parent)
+        if not _index.isValid():
+            return False
+        index = self.sourceModel().index(row, 0, parent)
+        if not index.isValid():
+            return False
+        _ratio = self.get_ratio(index)
+        return _ratio < self._ratio_threshhold
+
+    def hasAcceptedChildren(self, row, parent):
+        row_count = self.sourceModel().rowCount(self.sourceModel().index(row, 0, parent))
+
+        if self.rowAccepted(row, parent):
+            return True
+        if not row_count:
+            return False
+
+        for i in range(row_count):
+            if self.hasAcceptedChildren(i, self.sourceModel().index(row, 0, parent)):
+                return True
+        return False
+
+
+
 
     # def data(self, index, role=QtCore.Qt.DisplayRole):
     #     if role != QtCore.Qt.DisplayRole:
