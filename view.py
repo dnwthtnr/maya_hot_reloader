@@ -101,7 +101,7 @@ class ProxyModel(QtCore.QSortFilterProxyModel):
     def set_filter_text(self, text):
         self._flat_ratio_cache = {}
         self._branch_ratio_cache = {}
-        self._filter_text = text
+        self._filter_text = text.lower()
         self.invalidate()
 
     def filter_text(self):
@@ -221,17 +221,17 @@ class ProxyModel(QtCore.QSortFilterProxyModel):
         return _parent
 
     def rowAccepted(self, row, parent):
-        _index = self.sourceModel().index(row, 0, parent)
+        _index = super().index(row, 0, parent)
         if not _index.isValid():
             return False
-        index = self.sourceModel().index(row, 0, parent)
+        index = super().index(row, 0, parent)
         if not index.isValid():
             return False
         _ratio = self.get_ratio(index)
         return _ratio < self._ratio_threshhold
 
     def hasAcceptedChildren(self, row, parent):
-        row_count = self.sourceModel().rowCount(self.sourceModel().index(row, 0, parent))
+        row_count = super().rowCount(super().index(row, 0, parent))
 
         if self.rowAccepted(row, parent):
             return True
@@ -239,12 +239,22 @@ class ProxyModel(QtCore.QSortFilterProxyModel):
             return False
 
         for i in range(row_count):
-            if self.hasAcceptedChildren(i, self.sourceModel().index(row, 0, parent)):
+            if self.hasAcceptedChildren(i, super().index(row, 0, parent)):
                 return True
         return False
 
-
-
+    def data(self, index, role=QtCore.Qt.DisplayRole):
+        if role == QtCore.Qt.TextColorRole and self.filter_text():
+            key = super().data(index, QtCore.Qt.DisplayRole)
+            ratio = self._flat_ratio_cache.get(key, 0)
+            alpha = (ratio * 255)
+            rgb = (0, 0, 0)
+            if ratio > .75:
+                rgb = (80, 175, 100, alpha)
+            else:
+                rgb = (175, 80, 100, alpha)
+            return QtGui.QColor(*rgb)
+        return super().data(index, role=role)
 
     # def data(self, index, role=QtCore.Qt.DisplayRole):
     #     if role != QtCore.Qt.DisplayRole:
@@ -252,7 +262,7 @@ class ProxyModel(QtCore.QSortFilterProxyModel):
     #     # Provides a color falloff to demonstrate the filtering
     #     if not self.filter_text() or self._ratio_threshhold <= 0.0:
     #         return super().data(index, role)
-    #     # ratio = difflib.SequenceMatcher(None, self.filter_text(), (self.sourceModel().data(index, role) or "").lower()).quick_ratio()
+    #     # ratio = difflib.SequenceMatcher(None, self.filter_text(), (super().data(index, role) or "").lower()).quick_ratio()
     #     _data = super().data(index, role)
     #     if not _data:
     #         super().moveRow(index.parent(), index.row(), QtCore.QModelIndex(), -1)
@@ -423,7 +433,6 @@ def main(standalone=False):
         win.show()
         sys.exit(_app.exec_())
         return
-
     _maya_main()
 
 if __name__ == "__main__":
