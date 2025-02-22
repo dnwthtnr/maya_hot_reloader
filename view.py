@@ -88,6 +88,7 @@ class ModuleTree(QtCore.QAbstractItemModel):
         return _node.get_data("name")
 
 class ProxyModel(QtCore.QSortFilterProxyModel):
+    expand_index = QtCore.Signal(QtCore.QModelIndex)
 
     def __init__(self):
         super().__init__()
@@ -111,7 +112,6 @@ class ProxyModel(QtCore.QSortFilterProxyModel):
         return True
 
     def filterAcceptsRow(self, source_row, source_parent):
-        return True
 
         return self.rowAccepted(source_row, source_parent)
 
@@ -168,6 +168,19 @@ class ProxyModel(QtCore.QSortFilterProxyModel):
             ratio = self._branch_ratio_cache.get(key)
 
         return ratio
+
+    def expand_until_visible(self, index):
+        if not index.parent().isValid():
+            # is at top level
+            return
+
+        current_parent = index.parent()
+        indices_to_expand = []
+        while current_parent.isValid():
+            indices_to_expand.append(current_parent)
+            current_parent = current_parent.parent()
+
+        
 
     def cache_branch_ratio(self, key, root_index):
         """
@@ -228,7 +241,9 @@ class ProxyModel(QtCore.QSortFilterProxyModel):
         if not index.isValid():
             return False
         _ratio = self.get_ratio(index)
-        return _ratio < self._ratio_threshhold
+
+        is_accepted = _ratio < self._ratio_threshhold
+        return is_accepted
 
     def hasAcceptedChildren(self, row, parent):
         row_count = super().rowCount(super().index(row, 0, parent))
@@ -419,21 +434,3 @@ def hot_reloader_window(parent=None):
 
 
 def _maya_main():
-    from shiboken2 import wrapInstance
-    main_window = wrapInstance(int(omui.MQtUtil.mainWindow()), QtWidgets.QMainWindow)
-    win = hot_reloader_window(main_window)
-    win.show()
-
-
-def main(standalone=False):
-
-    if standalone:
-        _app = QtWidgets.QApplication()
-        win = hot_reloader_window()
-        win.show()
-        sys.exit(_app.exec_())
-        return
-    _maya_main()
-
-if __name__ == "__main__":
-    main(True)
